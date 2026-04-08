@@ -1,0 +1,153 @@
+/* === Pages === */
+.page { min-height: calc(100vh - 52px); }
+.page.no-nav { min-height: 100vh; }
+
+/* === Login === */
+#page-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+.login-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 400px;
+}
+.login-header { text-align: center; margin-bottom: 28px; }
+.login-header h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 4px; }
+.subtitle { color: var(--text-secondary); font-size: 0.9rem; }
+#login-form label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+}
+#api-key-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+#api-key-input:focus { border-color: var(--accent); }
+.error-msg { color: var(--red); font-size: 0.85rem; margin-top: 8px; }
+#login-btn { margin-top: 16px; width: 100%; }
+#login-form { margin-top: 20px; }
+
+/* === Dashboard === */
+.dashboard-container {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+.dashboard-section { margin-bottom: 36px; }
+.section-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 14px; color: var(--text-primary); }
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.section-header .section-title { margin-bottom: 0; }
+.card-list { display: flex; flex-direction: column; gap: 10px; }
+.empty-state {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 32px;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+}
+
+/* Environment Card */
+.env-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  box-shadow: var(--shadow);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+.env-card .env-name { font-weight: 600; font-size: 0.95rem; }
+.env-card .env-dir { font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary); }
+.env-card .env-branch { font-size: 0.8rem; color: var(--text-muted); }
+
+/* Session Card */
+.session-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 14px 20px;
+  box-shadow: var(--shadow);
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.session-card:hover { box-shadow: var(--shadow-md); }
+.session-card .session-title-text { font-weight: 500; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-card .session-id-text { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); }
+
+/* === Session Detail === */
+.session-container {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 52px);
+}
+.back-link { font-size: 0.85rem; color: var(--text-secondary); display: inline-block; margin-bottom: 12px; }
+.back-link:hover { color: var(--accent); text-decoration: none; }
+.session-header { margin-bottom: 20px; }
+.session-detail-title { font-size: 1.2rem; font-weight: 600; margin-bottom: 6px; }
+.session-meta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.meta-item { font-size: 0.8rem; color: var(--text-secondary); font-family: var(--font-mono); }
+
+/* === Control Bar === */
+.control-bar {
+  display: flex;
+  gap: 10px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border-light);
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+#msg-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+#msg-input:focus { border-color: var(--accent); }
+
+/* === Responsive === */
+@media (max-width: 640px) {
+  .login-card { margin: 16px; padding: 28px 20px; }
+  .dashboard-container, .session-container { padding: 16px; }
+  .session-card { grid-template-columns: 1fr; gap: 6px; }
+  .env-card { grid-template-columns: 1fr; }
+  .msg-row { max-width: 95%; }
+  .session-meta-row { flex-direction: column; gap: 4px; align-items: flex-start; }
+  .control-bar { flex-wrap: wrap; }
+  #msg-input { min-width: 0; }
+}

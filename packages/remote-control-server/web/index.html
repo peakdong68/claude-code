@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Remote Control — Claude Code</title>
+  <link rel="stylesheet" href="/code/style.css" />
+</head>
+<body>
+  <!-- Nav Bar -->
+  <nav id="navbar" class="hidden">
+    <div class="nav-inner">
+      <a href="#dashboard" class="nav-logo">
+        <span class="logo-icon">&#9672;</span> Remote Control
+      </a>
+      <div class="nav-links">
+        <a href="#dashboard" class="nav-link" id="nav-dashboard">Dashboard</a>
+        <button id="nav-logout" class="nav-link btn-text">Logout</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Login Page -->
+  <section id="page-login" class="page">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="logo-icon large">&#9672;</div>
+        <h1>Remote Control</h1>
+        <p class="subtitle">Claude Code Session Manager</p>
+      </div>
+      <form id="login-form">
+        <label for="api-key-input">API Key</label>
+        <input type="password" id="api-key-input" placeholder="Enter your API key" autocomplete="off" />
+        <div id="login-error" class="error-msg hidden"></div>
+        <button type="submit" class="btn-primary" id="login-btn">Sign In</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- Dashboard Page -->
+  <section id="page-dashboard" class="page hidden">
+    <div class="dashboard-container">
+      <!-- Environments -->
+      <div class="dashboard-section">
+        <h2 class="section-title">Environments</h2>
+        <div id="env-list" class="card-list">
+          <div class="empty-state">No active environments</div>
+        </div>
+      </div>
+      <!-- Sessions -->
+      <div class="dashboard-section">
+        <div class="section-header">
+          <h2 class="section-title">Sessions</h2>
+          <button id="new-session-btn" class="btn-primary btn-sm">+ New Session</button>
+        </div>
+        <div id="session-list" class="card-list">
+          <div class="empty-state">No sessions — click "New Session" to create one</div>
+        </div>
+      </div>
+
+      <!-- New Session Dialog -->
+      <div id="new-session-dialog" class="dialog-overlay hidden">
+        <div class="dialog-card">
+          <h3>New Session</h3>
+          <label for="ns-title">Title (optional)</label>
+          <input type="text" id="ns-title" placeholder="My session" />
+          <label for="ns-env">Environment</label>
+          <select id="ns-env"></select>
+          <div id="ns-error" class="error-msg hidden"></div>
+          <div class="dialog-actions">
+            <button id="ns-cancel" class="btn-outline">Cancel</button>
+            <button id="ns-create" class="btn-primary">Create</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Session Detail Page -->
+  <section id="page-session" class="page hidden">
+    <div class="session-container">
+      <!-- Header -->
+      <div class="session-header">
+        <a href="#dashboard" class="back-link">&larr; Dashboard</a>
+        <div class="session-meta">
+          <h2 id="session-title" class="session-detail-title">Session</h2>
+          <div class="session-meta-row">
+            <span id="session-id" class="meta-item"></span>
+            <span id="session-status" class="status-badge"></span>
+            <span id="session-env" class="meta-item"></span>
+            <span id="session-time" class="meta-item"></span>
+          </div>
+        </div>
+      </div>
+      <!-- Event Stream -->
+      <div id="event-stream" class="event-stream"></div>
+      <!-- Permission Prompt Area -->
+      <div id="permission-area" class="hidden"></div>
+      <!-- Control Bar -->
+      <div class="control-bar">
+        <input type="text" id="msg-input" placeholder="Type a message..." autocomplete="off" />
+        <button id="send-btn" class="btn-primary btn-sm">Send</button>
+        <button id="interrupt-btn" class="btn-danger btn-sm">Interrupt</button>
+      </div>
+    </div>
+  </section>
+
+  <script type="module" src="/code/app.js"></script>
+</body>
+</html>

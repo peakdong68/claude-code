@@ -1,26 +1,35 @@
 /**
- * Remote Control — SSE Connection Manager
+ * Remote Control — SSE Connection Manager (UUID-based auth)
  */
-import { isLoggedIn } from "./api.js";
+import { getUuid } from "./api.js";
+import { refreshLoadingActivity } from "./render.js";
 
 let currentEventSource = null;
 let currentSSESessionId = null;
 let onEventCallback = null;
 
-export function connectSSE(sessionId, onEvent) {
+export function connectSSE(sessionId, onEvent, fromSeqNum = 0) {
   disconnectSSE();
   currentSSESessionId = sessionId;
   onEventCallback = onEvent;
 
-  const token = isLoggedIn() ? localStorage.getItem("rcs_token") : "";
-  const url = `/web/sessions/${sessionId}/events?token=${encodeURIComponent(token)}`;
+  const uuid = getUuid();
+  let url = `/web/sessions/${sessionId}/events?uuid=${encodeURIComponent(uuid)}`;
+
   const es = new EventSource(url);
   currentEventSource = es;
+
+  // Track the last sequence number we've seen to avoid duplicates
+  let lastSeenSeq = fromSeqNum;
 
   es.addEventListener("message", (e) => {
     try {
       const data = JSON.parse(e.data);
+      // Skip events we've already rendered from history
+      if (data.seqNum !== undefined && data.seqNum <= lastSeenSeq) return;
+      if (data.seqNum !== undefined) lastSeenSeq = data.seqNum;
       onEventCallback?.(data);
+      refreshLoadingActivity();
     } catch {
       // ignore parse errors
     }

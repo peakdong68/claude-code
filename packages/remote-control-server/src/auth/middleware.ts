@@ -80,3 +80,23 @@ export async function sessionIngressAuth(c: Context, next: Next) {
 export async function acceptCliHeaders(c: Context, next: Next) {
   await next();
 }
+
+/**
+ * Extract UUID from request — query param ?uuid= or header X-UUID
+ */
+export function getUuidFromRequest(c: Context): string | undefined {
+  return c.req.query("uuid") || c.req.header("X-UUID");
+}
+
+/**
+ * UUID-based auth for Web UI routes (no-login mode).
+ * Requires a UUID in query param or header, injects it into context as c.set("uuid").
+ */
+export async function uuidAuth(c: Context, next: Next) {
+  const uuid = getUuidFromRequest(c);
+  if (!uuid) {
+    return c.json({ error: { type: "unauthorized", message: "Missing UUID" } }, 401);
+  }
+  c.set("uuid", uuid);
+  await next();
+}

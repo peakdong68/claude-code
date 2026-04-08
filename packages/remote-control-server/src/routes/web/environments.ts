@@ -1,16 +1,13 @@
 import { Hono } from "hono";
-import { apiKeyAuth } from "../../auth/middleware";
-import { listActiveEnvironmentsByUsername, listActiveEnvironmentsResponse } from "../../services/environment";
+import { uuidAuth } from "../../auth/middleware";
+import { listActiveEnvironmentsResponse } from "../../services/environment";
 
 const app = new Hono();
 
-/** GET /web/environments — List active environments for current user */
-app.get("/environments", apiKeyAuth, async (c) => {
-  const username = c.get("username");
-  // If user has a username, filter by it; otherwise return all environments
-  const envs = username
-    ? listActiveEnvironmentsByUsername(username)
-    : listActiveEnvironmentsResponse();
+/** GET /web/environments — List active environments (UUID-based, no user filtering) */
+app.get("/environments", uuidAuth, async (c) => {
+  // Environments are shared across all UUIDs for now
+  const envs = listActiveEnvironmentsResponse();
   return c.json(envs, 200);
 });
 

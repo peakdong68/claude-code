@@ -1,32 +1,26 @@
 import { Hono } from "hono";
-import { apiKeyAuth } from "../../auth/middleware";
+import { uuidAuth } from "../../auth/middleware";
 import { getSession, updateSessionStatus } from "../../services/session";
 import { publishSessionEvent } from "../../services/transport";
 import { getEventBus } from "../../transport/event-bus";
+import { storeIsSessionOwner } from "../../store";
 
 const app = new Hono();
 
-/**
- * Check if a session belongs to the given user.
- * Sessions with null username are considered unowned and accessible by anyone.
- */
-function ownsSession(session: { username: string | null }, username: string | undefined): boolean {
-  if (!session.username) return true;
-  if (!username) return true;
-  return session.username === username;
-}
-
 function checkOwnership(c: { get: (key: string) => string | undefined }, sessionId: string) {
-  const username = c.get("username");
+  const uuid = c.get("uuid");
+  if (!storeIsSessionOwner(sessionId, uuid)) {
+    return { error: true, session: null };
+  }
   const session = getSession(sessionId);
-  if (!session || !ownsSession(session, username)) {
+  if (!session) {
     return { error: true, session: null };
   }
   return { error: false, session };
 }
 
 /** POST /web/sessions/:id/events — Send user message to session */
-app.post("/sessions/:id/events", apiKeyAuth, async (c) => {
+app.post("/sessions/:id/events", uuidAuth, async (c) => {
   const sessionId = c.req.param("id")!;
   const { error } = checkOwnership(c, sessionId);
   if (error) {
@@ -42,7 +36,7 @@ app.post("/sessions/:id/events", apiKeyAuth, async (c) => {
 });
 
 /** POST /web/sessions/:id/control — Send control request (permission approval etc) */
-app.post("/sessions/:id/control", apiKeyAuth, async (c) => {
+app.post("/sessions/:id/control", uuidAuth, async (c) => {
   const sessionId = c.req.param("id")!;
   const { error } = checkOwnership(c, sessionId);
   if (error) {
@@ -55,7 +49,7 @@ app.post("/sessions/:id/control", apiKeyAuth, async (c) => {
 });
 
 /** POST /web/sessions/:id/interrupt — Interrupt session */
-app.post("/sessions/:id/interrupt", apiKeyAuth, async (c) => {
+app.post("/sessions/:id/interrupt", uuidAuth, async (c) => {
   const sessionId = c.req.param("id")!;
   const { error } = checkOwnership(c, sessionId);
   if (error) {

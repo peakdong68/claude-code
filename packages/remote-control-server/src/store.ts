@@ -55,6 +55,9 @@ const environments = new Map<string, EnvironmentRecord>();
 const sessions = new Map<string, SessionRecord>();
 const workItems = new Map<string, WorkItemRecord>();
 
+// UUID → session ownership: sessionId → Set of UUIDs
+const sessionOwners = new Map<string, Set<string>>();
+
 // ---------- User ----------
 
 export function storeCreateUser(username: string): UserRecord {
@@ -192,6 +195,35 @@ export function storeDeleteSession(id: string): boolean {
 
 // ---------- Work Items ----------
 
+// ---------- Session Ownership (UUID-based) ----------
+
+export function storeBindSession(sessionId: string, uuid: string): void {
+  let owners = sessionOwners.get(sessionId);
+  if (!owners) {
+    owners = new Set();
+    sessionOwners.set(sessionId, owners);
+  }
+  owners.add(uuid);
+}
+
+export function storeIsSessionOwner(sessionId: string, uuid: string): boolean {
+  const owners = sessionOwners.get(sessionId);
+  return owners ? owners.has(uuid) : false;
+}
+
+export function storeListSessionsByOwnerUuid(uuid: string): SessionRecord[] {
+  const result: SessionRecord[] = [];
+  for (const [sessionId, owners] of sessionOwners) {
+    if (owners.has(uuid)) {
+      const session = sessions.get(sessionId);
+      if (session) result.push(session);
+    }
+  }
+  return result;
+}
+
+// ---------- Work Items (cont.) ----------
+
 export function storeCreateWorkItem(req: {
   environmentId: string;
   sessionId: string;
@@ -240,4 +272,5 @@ export function storeReset() {
   environments.clear();
   sessions.clear();
   workItems.clear();
+  sessionOwners.clear();
 }

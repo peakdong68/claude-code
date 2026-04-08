@@ -155,31 +155,68 @@
 /* === Timestamps === */
 .event-time { font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; }
 
-/* === Loading Indicator — Anthropic === */
-.loading-bubble {
-  background: var(--bg-card) !important;
-  border: 1px solid var(--border-light) !important;
-  border-bottom-left-radius: 6px !important;
-  padding: 14px 20px !important;
-}
-.loading-dots {
-  display: inline-flex;
-  gap: 6px;
+/* === Loading Indicator — TUI star spinner === */
+.msg-row.loading-row {
+  align-self: flex-start;
+  max-width: 82%;
+  display: flex;
   align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+  animation: msgIn 0.3s ease-out;
 }
-.loading-dots span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: anthropicPulse 1.4s ease-in-out infinite;
-  opacity: 0.3;
+.tui-spinner {
+  font-size: 1.2rem;
+  color: var(--accent);
+  line-height: 1;
+  min-width: 1.2em;
+  transition: color 2s ease;
 }
-.loading-dots span:nth-child(1) { animation-delay: 0s; }
-.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
-.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+.stalled .tui-spinner { color: var(--red); }
+.tui-verb {
+  font-size: 0.88rem;
+  font-weight: 500;
+  transition: color 2s ease;
+}
+.stalled .tui-verb { color: var(--red); }
 
-@keyframes anthropicPulse {
-  0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); }
-  40% { opacity: 1; transform: scale(1.1); }
+/* Glimmer — reverse sweep highlight (same visual as TUI) */
+.glimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--text-secondary) 0%,
+    var(--text-secondary) 40%,
+    var(--accent) 50%,
+    var(--text-secondary) 60%,
+    var(--text-secondary) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: glimmerSweep 3s ease-in-out infinite;
+}
+@keyframes glimmerSweep {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.stalled .glimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--red) 0%,
+    var(--red) 40%,
+    #E06060 50%,
+    var(--red) 60%,
+    var(--red) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.tui-timer {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-left: auto;
 }

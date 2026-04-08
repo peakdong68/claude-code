@@ -30,6 +30,7 @@ export function createSSEWriter(c: Context): SSEWriter {
         type: event.type,
         payload: event.payload,
         direction: event.direction,
+        seqNum: event.seqNum,
       });
       const msg = `id: ${event.seqNum}\nevent: message\ndata: ${data}\n\n`;
       controller.enqueue(encoder.encode(msg));
@@ -57,6 +58,7 @@ export function createSSEStream(c: Context, sessionId: string, fromSeqNum = 0) {
             type: event.type,
             payload: event.payload,
             direction: event.direction,
+            seqNum: event.seqNum,
           });
           controller.enqueue(encoder.encode(`id: ${event.seqNum}\nevent: message\ndata: ${data}\n\n`));
         }
@@ -71,6 +73,7 @@ export function createSSEStream(c: Context, sessionId: string, fromSeqNum = 0) {
           type: event.type,
           payload: event.payload,
           direction: event.direction,
+          seqNum: event.seqNum,
         });
         try {
           console.log(`[RC-DEBUG] SSE -> web: sessionId=${sessionId} type=${event.type} dir=${event.direction} seq=${event.seqNum}`);

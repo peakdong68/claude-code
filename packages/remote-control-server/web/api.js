@@ -1,49 +1,34 @@
 /**
- * Remote Control — API Client
+ * Remote Control — API Client (UUID-based auth)
  */
 
 const BASE = ""; // same origin
 
-function getToken() {
-  return localStorage.getItem("rcs_token");
-}
-
-export function setToken(token) {
-  localStorage.setItem("rcs_token", token);
-}
-
-export function clearToken() {
-  localStorage.removeItem("rcs_token");
-  localStorage.removeItem("rcs_username");
-}
-
-export function setUsername(username) {
-  localStorage.setItem("rcs_username", username);
-}
-
-export function getUsername() {
-  return localStorage.getItem("rcs_username");
-}
-
-export function isLoggedIn() {
-  const token = getToken();
-  // Force re-login for old-format tokens (raw API keys, not rct_* tokens)
-  if (token && !token.startsWith("rct_")) {
-    clearToken();
-    return false;
+export function getUuid() {
+  let uuid = localStorage.getItem("rcs_uuid");
+  if (!uuid) {
+    uuid = crypto.randomUUID();
+    localStorage.setItem("rcs_uuid", uuid);
   }
-  return !!token;
+  return uuid;
+}
+
+export function setUuid(uuid) {
+  localStorage.setItem("rcs_uuid", uuid);
 }
 
 async function api(method, path, body) {
   const headers = { "Content-Type": "application/json" };
-  const token = getToken();
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const uuid = getUuid();
+
+  // Append uuid as query param for auth
+  const sep = path.includes("?") ? "&" : "?";
+  const url = `${BASE}${path}${sep}uuid=${encodeURIComponent(uuid)}`;
 
   const opts = { method, headers };
   if (body !== undefined) opts.body = JSON.stringify(body);
 
-  const res = await fetch(`${BASE}${path}`, opts);
+  const res = await fetch(url, opts);
   const data = await res.json();
 
   if (!res.ok) {
@@ -53,27 +38,42 @@ async function api(method, path, body) {
   return data;
 }
 
-export function apiLogin(apiKey, username) {
-  return api("POST", "/web/auth/login", { apiKey, username });
+export function apiBind(sessionId) {
+  return api("POST", "/web/bind", { sessionId });
 }
+
 export function apiFetchSessions() {
   return api("GET", "/web/sessions");
 }
+
+export function apiFetchAllSessions() {
+  return api("GET", "/web/sessions/all");
+}
+
 export function apiFetchSession(id) {
   return api("GET", `/web/sessions/${id}`);
 }
+
+export function apiFetchSessionHistory(id) {
+  return api("GET", `/web/sessions/${id}/history`);
+}
+
 export function apiFetchEnvironments() {
   return api("GET", "/web/environments");
 }
+
 export function apiSendEvent(sessionId, body) {
   return api("POST", `/web/sessions/${sessionId}/events`, body);
 }
+
 export function apiSendControl(sessionId, body) {
   return api("POST", `/web/sessions/${sessionId}/control`, body);
 }
+
 export function apiInterrupt(sessionId) {
   return api("POST", `/web/sessions/${sessionId}/interrupt`);
 }
+
 export function apiCreateSession(body) {
   return api("POST", "/web/sessions", body);
 }

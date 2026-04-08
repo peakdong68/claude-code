@@ -61,7 +61,7 @@ function formatAssistantContent(content) {
 // Event Router
 // ============================================================
 
-export function appendEvent(data) {
+export function appendEvent(data, { replay = false } = {}) {
   const stream = document.getElementById("event-stream");
   if (!stream) return;
 
@@ -69,20 +69,66 @@ export function appendEvent(data) {
   const payload = data.payload || {};
   const direction = data.direction || "inbound";
 
+  // Early filter: skip bridge init noise regardless of event type
+  const serialized = JSON.stringify(data);
+  if (/Remote Control connecting/i.test(serialized)) return;
+
+  // During history replay, only render messages & tools — skip interactive/stateful events
+  if (replay) {
+    let histEl;
+    switch (type) {
+      case "user":
+        if (direction === "outbound") histEl = renderUserMessage(payload, direction);
+        break;
+      case "assistant":
+        {
+          const text = extractText(payload);
+          if (text && text.trim()) histEl = renderAssistantMessage(payload);
+        }
+        break;
+      case "tool_use":
+        histEl = renderToolUse(payload);
+        break;
+      case "tool_result":
+        histEl = renderToolResult(payload);
+        break;
+      case "error":
+        histEl = renderSystemMessage(`Error: ${payload.message || payload.content || "Unknown error"}`);
+        break;
+      // Skip: partial_assistant, result, control_request, control_response,
+      //       permission_response, status, interrupt, system, user inbound echoes
+      default:
+        return;
+    }
+    if (histEl) {
+      stream.appendChild(histEl);
+      stream.scrollTop = stream.scrollHeight;
+    }
+    return;
+  }
+
   let el;
+  let needLoading = false;
 
   switch (type) {
     case "user":
+      // Skip inbound user messages — they're echoes of what we already sent
+      if (direction === "inbound") return;
       el = renderUserMessage(payload, direction);
-      // Only show loading when we send (outbound), not for echoes
-      if (direction === "outbound") {
-        showLoading();
-      }
+      needLoading = true;
       break;
-    case "assistant":
     case "partial_assistant":
+      // Skip partial assistant — wait for the final "assistant" event
+      // to avoid blank/duplicate messages during streaming
+      return;
+    case "assistant":
       removeLoading();
-      el = renderAssistantMessage(payload);
+      // Skip empty assistant messages
+      {
+        const text = extractText(payload);
+        if (!text || !text.trim()) return;
+        el = renderAssistantMessage(payload);
+      }
       break;
     case "result":
     case "result_success":
@@ -107,31 +153,45 @@ export function appendEvent(data) {
       }
       break;
     case "control_response":
-      el = renderSystemMessage(`Control response: ${payload.response?.subtype || "done"}`);
-      break;
     case "permission_response":
-      el = renderSystemMessage("Permission response sent");
-      break;
+      // Skip — these are just acknowledgments, no need to show in stream
+      return;
     case "status":
-      el = renderSystemMessage(payload.message || payload.content || "Status update");
+      // Skip connecting/waiting status noise from bridge
+      {
+        const msg = payload.message || payload.content || "";
+        const fullText = typeof payload === "string" ? payload : JSON.stringify(payload);
+        if (/connecting|waiting|initializing|Remote Control/i.test(msg + " " + fullText)) return;
+        if (!msg.trim()) return;
+        el = renderSystemMessage(msg);
+      }
       break;
     case "error":
+      removeLoading();
       el = renderSystemMessage(`Error: ${payload.message || payload.content || "Unknown error"}`);
       break;
     case "interrupt":
+      removeLoading();
       el = renderSystemMessage("Session interrupted");
       break;
     case "system":
       // Skip raw system/init messages — they're noise
       return;
-    default:
-      el = renderSystemMessage(`${type}: ${truncate(JSON.stringify(payload), 200)}`);
+    default: {
+      // Skip noise from bridge init
+      const raw = JSON.stringify(payload);
+      if (/Remote Control connecting/i.test(raw)) return;
+      el = renderSystemMessage(`${type}: ${truncate(raw, 200)}`);
+    }
   }
 
   if (el) {
     stream.appendChild(el);
     stream.scrollTop = stream.scrollHeight;
   }
+
+  // Show loading after the message element is in the DOM so it renders below
+  if (needLoading) showLoading();
 }
 
 // ============================================================
@@ -227,24 +287,134 @@ function renderSystemMessage(text) {
 }
 
 // ============================================================
-// Loading Indicator
+// Loading Indicator — TUI star spinner style
 // ============================================================
 
 const LOADING_ID = "loading-indicator";
+
+// TUI star spinner frames (same as Claude Code CLI)
+const SPINNER_FRAMES = ["·", "✢", "✳", "✶", "✻", "✽"];
+const SPINNER_CYCLE = [...SPINNER_FRAMES, ...SPINNER_FRAMES.slice().reverse()];
+
+// 204 verbs from TUI src/constants/spinnerVerbs.ts
+const SPINNER_VERBS = [
+  "Accomplishing","Actioning","Actualizing","Architecting","Baking","Beaming",
+  "Beboppin'","Befuddling","Billowing","Blanching","Bloviating","Boogieing",
+  "Boondoggling","Booping","Bootstrapping","Brewing","Bunning","Burrowing",
+  "Calculating","Canoodling","Caramelizing","Cascading","Catapulting","Cerebrating",
+  "Channeling","Channelling","Choreographing","Churning","Clauding","Coalescing",
+  "Cogitating","Combobulating","Composing","Computing","Concocting","Considering",
+  "Contemplating","Cooking","Crafting","Creating","Crunching","Crystallizing",
+  "Cultivating","Deciphering","Deliberating","Determining","Dilly-dallying",
+  "Discombobulating","Doing","Doodling","Drizzling","Ebbing","Effecting",
+  "Elucidating","Embellishing","Enchanting","Envisioning","Evaporating",
+  "Fermenting","Fiddle-faddling","Finagling","Flambéing","Flibbertigibbeting",
+  "Flowing","Flummoxing","Fluttering","Forging","Forming","Frolicking","Frosting",
+  "Gallivanting","Galloping","Garnishing","Generating","Gesticulating",
+  "Germinating","Gitifying","Grooving","Gusting","Harmonizing","Hashing",
+  "Hatching","Herding","Honking","Hullaballooing","Hyperspacing","Ideating",
+  "Imagining","Improvising","Incubating","Inferring","Infusing","Ionizing",
+  "Jitterbugging","Julienning","Kneading","Leavening","Levitating","Lollygagging",
+  "Manifesting","Marinating","Meandering","Metamorphosing","Misting","Moonwalking",
+  "Moseying","Mulling","Mustering","Musing","Nebulizing","Nesting","Newspapering",
+  "Noodling","Nucleating","Orbiting","Orchestrating","Osmosing","Perambulating",
+  "Percolating","Perusing","Philosophising","Photosynthesizing","Pollinating",
+  "Pondering","Pontificating","Pouncing","Precipitating","Prestidigitating",
+  "Processing","Proofing","Propagating","Puttering","Puzzling","Quantumizing",
+  "Razzle-dazzling","Razzmatazzing","Recombobulating","Reticulating","Roosting",
+  "Ruminating","Sautéing","Scampering","Schlepping","Scurrying","Seasoning",
+  "Shenaniganing","Shimmying","Simmering","Skedaddling","Sketching","Slithering",
+  "Smooshing","Sock-hopping","Spelunking","Spinning","Sprouting","Stewing",
+  "Sublimating","Swirling","Swooping","Symbioting","Synthesizing","Tempering",
+  "Thinking","Thundering","Tinkering","Tomfoolering","Topsy-turvying",
+  "Transfiguring","Transmuting","Twisting","Undulating","Unfurling","Unravelling",
+  "Vibing","Waddling","Wandering","Warping","Whatchamacalliting","Whirlpooling",
+  "Whirring","Whisking","Wibbling","Working","Wrangling","Zesting","Zigzagging",
+];
+
+// Animation state
+let spinnerInterval = null;
+let timerInterval = null;
+let stalledCheckInterval = null;
+let spinnerFrame = 0;
+let loadingStartTime = 0;
+let lastActivityTime = 0;
+let isStalled = false;
+let loadingActive = false;
+
+export function isLoading() {
+  return loadingActive;
+}
+
+function syncActionBtn(state) {
+  if (typeof window.__updateActionBtn === "function") window.__updateActionBtn(state);
+}
 
 export function showLoading() {
   removeLoading();
   const stream = document.getElementById("event-stream");
   if (!stream) return;
+
+  loadingActive = true;
+  syncActionBtn(true);
+
+  const verb = SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)];
+  loadingStartTime = Date.now();
+  lastActivityTime = Date.now();
+  isStalled = false;
+
   const el = document.createElement("div");
   el.id = LOADING_ID;
-  el.className = "msg-row assistant";
-  el.innerHTML = `<div class="msg-bubble loading-bubble"><span class="loading-dots"><span></span><span></span><span></span></span></div>`;
+  el.className = "msg-row loading-row";
+  el.innerHTML = `<span class="tui-spinner">${SPINNER_CYCLE[0]}</span><span class="tui-verb glimmer-text">${esc(verb)}…</span><span class="tui-timer">0s</span>`;
   stream.appendChild(el);
   stream.scrollTop = stream.scrollHeight;
+
+  const spinnerEl = el.querySelector(".tui-spinner");
+  const timerEl = el.querySelector(".tui-timer");
+  const loadingEl = el;
+
+  // Spinner animation — 120ms interval, same as TUI
+  spinnerFrame = 0;
+  spinnerInterval = setInterval(() => {
+    spinnerFrame = (spinnerFrame + 1) % SPINNER_CYCLE.length;
+    if (spinnerEl) spinnerEl.textContent = SPINNER_CYCLE[spinnerFrame];
+  }, 120);
+
+  // Timer — update every second
+  timerInterval = setInterval(() => {
+    if (timerEl) {
+      const elapsed = Math.floor((Date.now() - loadingStartTime) / 1000);
+      timerEl.textContent = `${elapsed}s`;
+    }
+  }, 1000);
+
+  // Stalled detection — check every 120ms (aligned with spinner)
+  stalledCheckInterval = setInterval(() => {
+    if (!isStalled && Date.now() - lastActivityTime > 3000) {
+      isStalled = true;
+      if (loadingEl) loadingEl.classList.add("stalled");
+    }
+  }, 120);
 }
 
 export function removeLoading() {
+  if (spinnerInterval) { clearInterval(spinnerInterval); spinnerInterval = null; }
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  if (stalledCheckInterval) { clearInterval(stalledCheckInterval); stalledCheckInterval = null; }
+  isStalled = false;
+  loadingActive = false;
+  syncActionBtn(false);
   const el = document.getElementById(LOADING_ID);
   if (el) el.remove();
+}
+
+/** Reset stalled timer — call when SSE events arrive */
+export function refreshLoadingActivity() {
+  lastActivityTime = Date.now();
+  if (isStalled) {
+    isStalled = false;
+    const loadingEl = document.getElementById(LOADING_ID);
+    if (loadingEl) loadingEl.classList.remove("stalled");
+  }
 }

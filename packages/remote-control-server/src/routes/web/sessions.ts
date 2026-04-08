@@ -1,32 +1,26 @@
 import { Hono } from "hono";
-import { apiKeyAuth } from "../../auth/middleware";
-import { listSessionSummariesByUsername, listSessionSummaries, getSession, createSession } from "../../services/session";
+import { uuidAuth } from "../../auth/middleware";
+import { listSessionSummaries, getSession, createSession } from "../../services/session";
+import { storeListSessionsByOwnerUuid, storeIsSessionOwner, storeBindSession } from "../../store";
 import { createWorkItem } from "../../services/work-dispatch";
 import { createSSEStream } from "../../transport/sse-writer";
+import { getEventBus } from "../../transport/event-bus";
 
 const app = new Hono();
 
-/**
- * Check if a session belongs to the given user.
- * Sessions with null username are considered unowned and accessible by anyone.
- */
-function ownsSession(session: { username: string | null }, username: string | undefined): boolean {
-  if (!session.username) return true; // unowned session — anyone can access
-  if (!username) return true; // user authenticated via API key without username — allow all
-  return session.username === username;
-}
-
 /** POST /web/sessions — Create a session from web UI */
-app.post("/sessions", apiKeyAuth, async (c) => {
-  const username = c.get("username");
+app.post("/sessions", uuidAuth, async (c) => {
+  const uuid = c.get("uuid");
   const body = await c.req.json();
   const session = createSession({
     environment_id: body.environment_id || null,
     title: body.title || "New Session",
     source: "web",
     permission_mode: body.permission_mode || "default",
-    username,
   });
+
+  // Auto-bind to creator's UUID
+  storeBindSession(session.id, uuid);
 
   // Dispatch work to environment if specified
   if (body.environment_id) {
@@ -40,33 +34,59 @@ app.post("/sessions", apiKeyAuth, async (c) => {
   return c.json(session, 200);
 });
 
-/** GET /web/sessions — List sessions for current user */
-app.get("/sessions", apiKeyAuth, async (c) => {
-  const username = c.get("username");
-  // If user has a username, filter by it; otherwise return all sessions
-  const sessions = username
-    ? listSessionSummariesByUsername(username)
-    : listSessionSummaries();
+/** GET /web/sessions — List sessions owned by the requesting UUID */
+app.get("/sessions", uuidAuth, async (c) => {
+  const uuid = c.get("uuid");
+  const sessions = storeListSessionsByOwnerUuid(uuid);
+  return c.json(sessions, 200);
+});
+
+/** GET /web/sessions/all — List ALL sessions (for dashboard discovery, no UUID filter) */
+app.get("/sessions/all", uuidAuth, async (c) => {
+  const sessions = listSessionSummaries();
   return c.json(sessions, 200);
 });
 
 /** GET /web/sessions/:id — Session detail */
-app.get("/sessions/:id", apiKeyAuth, async (c) => {
-  const username = c.get("username");
+app.get("/sessions/:id", uuidAuth, async (c) => {
+  const uuid = c.get("uuid");
   const sessionId = c.req.param("id")!;
+  if (!storeIsSessionOwner(sessionId, uuid)) {
+    return c.json({ error: { type: "forbidden", message: "Not your session" } }, 403);
+  }
   const session = getSession(sessionId);
-  if (!session || !ownsSession(session, username)) {
+  if (!session) {
     return c.json({ error: { type: "not_found", message: "Session not found" } }, 404);
   }
   return c.json(session, 200);
 });
 
-/** SSE /web/sessions/:id/events — Real-time event stream */
-app.get("/sessions/:id/events", apiKeyAuth, async (c) => {
-  const username = c.get("username");
+/** GET /web/sessions/:id/history — Historical events for session */
+app.get("/sessions/:id/history", uuidAuth, async (c) => {
+  const uuid = c.get("uuid");
   const sessionId = c.req.param("id")!;
+  if (!storeIsSessionOwner(sessionId, uuid)) {
+    return c.json({ error: { type: "forbidden", message: "Not your session" } }, 403);
+  }
   const session = getSession(sessionId);
-  if (!session || !ownsSession(session, username)) {
+  if (!session) {
+    return c.json({ error: { type: "not_found", message: "Session not found" } }, 404);
+  }
+
+  const bus = getEventBus(sessionId);
+  const events = bus.getEventsSince(0);
+  return c.json({ events }, 200);
+});
+
+/** SSE /web/sessions/:id/events — Real-time event stream */
+app.get("/sessions/:id/events", uuidAuth, async (c) => {
+  const uuid = c.get("uuid");
+  const sessionId = c.req.param("id")!;
+  if (!storeIsSessionOwner(sessionId, uuid)) {
+    return c.json({ error: { type: "forbidden", message: "Not your session" } }, 403);
+  }
+  const session = getSession(sessionId);
+  if (!session) {
     return c.json({ error: { type: "not_found", message: "Session not found" } }, 404);
   }
 

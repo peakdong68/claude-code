@@ -48,7 +48,9 @@ function toSDKMessage(event: SessionEvent): string {
         response: {
           subtype: approved ? "success" : "error",
           request_id: payload?.request_id ?? "",
-          ...(approved ? {} : { error: "Permission denied by user" }),
+          ...(approved
+            ? { response: { behavior: "allow" as const } }
+            : { error: "Permission denied by user", response: { behavior: "deny" as const } }),
         },
       };
     }

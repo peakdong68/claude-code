@@ -1,32 +1,26 @@
 import { Hono } from "hono";
-import { validateApiKey } from "../../auth/api-key";
-import { issueToken } from "../../auth/token";
-import { storeCreateUser } from "../../store";
+import { storeGetSession, storeBindSession } from "../../store";
 
 const app = new Hono();
 
-/** POST /web/auth/login — Verify API key + username, return random token */
-app.post("/auth/login", async (c) => {
+/** POST /web/bind — Bind a session to a UUID (no-login auth) */
+app.post("/bind", async (c) => {
   const body = await c.req.json();
-  const apiKey = body.apiKey;
-  const username = body.username;
+  const sessionId = body.sessionId;
+  // UUID can come from query param (api.js sends it in URL) or body
+  const uuid = c.req.query("uuid") || body.uuid;
 
-  if (!apiKey || !validateApiKey(apiKey)) {
-    return c.json({ error: { type: "unauthorized", message: "Invalid API key" } }, 401);
+  if (!sessionId || !uuid) {
+    return c.json({ error: "sessionId and uuid are required" }, 400);
   }
 
-  if (!username || !username.trim()) {
-    return c.json({ error: { type: "bad_request", message: "Username is required" } }, 400);
+  const session = storeGetSession(sessionId);
+  if (!session) {
+    return c.json({ error: "Session not found" }, 404);
   }
 
-  const name = username.trim().slice(0, 32);
-
-  // Auto-register user if not exists
-  storeCreateUser(name);
-
-  // Issue a random token
-  const result = issueToken(name);
-  return c.json(result, 200);
+  storeBindSession(sessionId, uuid);
+  return c.json({ ok: true, sessionId });
 });
 
 export default app;

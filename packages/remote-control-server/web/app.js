@@ -1,9 +1,10 @@
 /**
  * Remote Control — Main App (Router + Orchestrator)
+ * UUID-based auth — no login required
  */
-import { setToken, clearToken, setUsername, getUsername, isLoggedIn, apiLogin, apiFetchSessions, apiFetchEnvironments, apiFetchSession, apiSendEvent, apiSendControl, apiInterrupt, apiCreateSession } from "./api.js";
+import { getUuid, setUuid, apiBind, apiFetchSessions, apiFetchAllSessions, apiFetchEnvironments, apiFetchSession, apiFetchSessionHistory, apiSendEvent, apiSendControl, apiInterrupt, apiCreateSession } from "./api.js";
 import { connectSSE, disconnectSSE } from "./sse.js";
-import { appendEvent, renderPermissionRequest } from "./render.js";
+import { appendEvent, renderPermissionRequest, showLoading, isLoading } from "./render.js";
 import { esc, formatTime, statusClass } from "./utils.js";
 
 // ============================================================
@@ -18,115 +19,79 @@ let cachedEnvs = [];
 // Router
 // ============================================================
 
-const pages = ["login", "dashboard", "session"];
-
 function getPathSessionId() {
   const match = window.location.pathname.match(/^\/code\/([^/]+)/);
   return match ? match[1] : null;
 }
 
-function getBridgeEnvId() {
-  return new URLSearchParams(window.location.search).get("bridge");
+function getUrlParam(name) {
+  return new URLSearchParams(window.location.search).get(name);
 }
 
 function showPage(name) {
+  const pages = ["dashboard", "session"];
   for (const p of pages) {
     const el = document.getElementById(`page-${p}`);
     if (el) el.classList.toggle("hidden", p !== name);
   }
-  const navbar = document.getElementById("navbar");
-  navbar.classList.toggle("hidden", name === "login");
 }
 
-function navigate(hash) {
-  window.location.hash = hash;
+function navigate(path) {
+  history.pushState(null, "", path);
+  handleRoute();
 }
+window.navigate = navigate;
 
-function handleRoute() {
-  const hash = window.location.hash.slice(1) || "";
+async function handleRoute() {
+  // Ensure we have a UUID
+  getUuid();
 
-  if (!isLoggedIn()) {
-    showPage("login");
-    stopDashboardRefresh();
-    disconnectSSE();
-    return;
+  // Check for UUID import from QR scan (?uuid=xxx)
+  const importUuid = getUrlParam("uuid");
+  if (importUuid) {
+    setUuid(importUuid);
+    const url = new URL(window.location);
+    url.searchParams.delete("uuid");
+    history.replaceState(null, "", url);
   }
 
-  // Show username in navbar
-  const navUsername = document.getElementById("nav-username");
-  if (navUsername) navUsername.textContent = getUsername() || "";
+  // Check for CLI session bind (?sid=xxx)
+  const sid = getUrlParam("sid");
+  if (sid) {
+    try {
+      await apiBind(sid);
+      const url = new URL(window.location);
+      url.searchParams.delete("sid");
+      history.replaceState(null, "", `/code/${sid}`);
+      showPage("session");
+      stopDashboardRefresh();
+      renderSessionDetail(sid);
+      return;
+    } catch (err) {
+      console.error("Failed to bind session:", err);
+      alert("Session not found or bind failed: " + err.message);
+      history.replaceState(null, "", "/code");
+    }
+  }
 
+  // Path-based routing: /code/session_xxx → session detail
   const pathSessionId = getPathSessionId();
   if (pathSessionId) {
+    try { await apiBind(pathSessionId); } catch { /* may already be bound */ }
     showPage("session");
     stopDashboardRefresh();
     renderSessionDetail(pathSessionId);
     return;
   }
 
-  if (hash.startsWith("session/")) {
-    const id = hash.slice("session/".length);
-    if (id) {
-      showPage("session");
-      stopDashboardRefresh();
-      renderSessionDetail(id);
-      return;
-    }
-  }
-
+  // Default: /code → dashboard
   showPage("dashboard");
   disconnectSSE();
   renderDashboard();
   startDashboardRefresh();
 }
 
-window.addEventListener("hashchange", handleRoute);
-
-// ============================================================
-// Login
-// ============================================================
-
-function setupLogin() {
-  const form = document.getElementById("login-form");
-  const errorEl = document.getElementById("login-error");
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    errorEl.classList.add("hidden");
-    const keyInput = document.getElementById("api-key-input");
-    const userInput = document.getElementById("username-input");
-    const btn = document.getElementById("login-btn");
-    const key = keyInput.value.trim();
-    const username = userInput.value.trim();
-    if (!key || !username) {
-      errorEl.textContent = "Username and API key are required";
-      errorEl.classList.remove("hidden");
-      return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = "Signing in...";
-    try {
-      const res = await apiLogin(key, username);
-      setToken(res.token);
-      setUsername(username);
-      navigate("#dashboard");
-    } catch (err) {
-      errorEl.textContent = err.message || "Login failed";
-      errorEl.classList.remove("hidden");
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Sign In";
-    }
-  });
-
-  document.getElementById("nav-logout").addEventListener("click", () => {
-    clearToken();
-    stopDashboardRefresh();
-    disconnectSSE();
-    navigate("#login");
-  });
-}
+window.addEventListener("popstate", handleRoute);
 
 // ============================================================
 // Dashboard
@@ -134,15 +99,12 @@ function setupLogin() {
 
 async function renderDashboard() {
   try {
-    const [sessions, envs] = await Promise.all([apiFetchSessions(), apiFetchEnvironments()]);
+    const [sessions, envs] = await Promise.all([apiFetchAllSessions(), apiFetchEnvironments()]);
     cachedEnvs = envs || [];
     renderEnvironmentList(cachedEnvs);
     renderSessionList(sessions);
   } catch (err) {
-    if (err.message.includes("unauthorized") || err.message.includes("401")) {
-      clearToken();
-      navigate("#login");
-    }
+    console.error("Dashboard render error:", err);
   }
 }
 
@@ -173,13 +135,13 @@ function renderSessionList(sessions) {
   }
   sessions.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
   container.innerHTML = sessions.map((s) => `
-    <div class="session-card" onclick="navigate('#session/${esc(s.id)}')">
+    <div class="session-card" onclick="navigate('/code/${esc(s.id)}')">
       <div>
         <div class="session-title-text">${esc(s.title || s.id)}</div>
         <div class="session-id-text">${esc(s.id)}</div>
       </div>
       <span class="status-badge status-${statusClass(s.status)}">${esc(s.status)}</span>
-      <span class="meta-item">${formatTime(s.created_at)}</span>
+      <span class="meta-item">${formatTime(s.created_at || s.updated_at)}</span>
     </div>`).join("");
 }
 
@@ -207,16 +169,29 @@ async function renderSessionDetail(id) {
     badge.textContent = session.status;
     badge.className = `status-badge status-${statusClass(session.status)}`;
   } catch (err) {
-    if (err.message.includes("unauthorized") || err.message.includes("401")) {
-      clearToken();
-      navigate("#login");
-      return;
-    }
+    alert("Failed to load session: " + err.message);
+    navigate("/code");
+    return;
   }
   document.getElementById("event-stream").innerHTML = "";
   document.getElementById("permission-area").innerHTML = "";
   document.getElementById("permission-area").classList.add("hidden");
-  connectSSE(id, appendEvent);
+
+  // Load historical events before connecting to live stream
+  let lastSeqNum = 0;
+  try {
+    const { events } = await apiFetchSessionHistory(id);
+    if (events && events.length > 0) {
+      for (const event of events) {
+        appendEvent(event, { replay: true });
+        if (event.seqNum && event.seqNum > lastSeqNum) lastSeqNum = event.seqNum;
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to load session history:", err);
+  }
+
+  connectSSE(id, appendEvent, lastSeqNum);
 }
 
 // ============================================================
@@ -225,26 +200,44 @@ async function renderSessionDetail(id) {
 
 function setupControlBar() {
   const input = document.getElementById("msg-input");
-  const sendBtn = document.getElementById("send-btn");
-  const interruptBtn = document.getElementById("interrupt-btn");
+  const actionBtn = document.getElementById("action-btn");
+  const iconSend = document.getElementById("action-icon-send");
+  const iconStop = document.getElementById("action-icon-stop");
 
-  sendBtn.addEventListener("click", sendMessage);
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-  });
+  function setBtnState(loading) {
+    actionBtn.classList.toggle("loading", loading);
+    actionBtn.setAttribute("aria-label", loading ? "Stop" : "Send");
+    iconSend.classList.toggle("hidden", loading);
+    iconStop.classList.toggle("hidden", !loading);
+  }
 
-  interruptBtn.addEventListener("click", async () => {
-    if (!currentSessionId) return;
-    interruptBtn.disabled = true;
-    try {
-      await apiInterrupt(currentSessionId);
-      appendEvent({ type: "interrupt", payload: { message: "Session interrupted" } });
-    } catch (err) {
-      alert("Interrupt failed: " + err.message);
-    } finally {
-      interruptBtn.disabled = false;
+  window.__updateActionBtn = setBtnState;
+
+  actionBtn.addEventListener("click", () => {
+    if (isLoading()) {
+      doInterrupt();
+    } else {
+      sendMessage();
     }
   });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMessage(); }
+  });
+}
+
+async function doInterrupt() {
+  if (!currentSessionId) return;
+  const btn = document.getElementById("action-btn");
+  btn.disabled = true;
+  try {
+    await apiInterrupt(currentSessionId);
+    appendEvent({ type: "interrupt", payload: { message: "Session interrupted" } });
+  } catch (err) {
+    alert("Interrupt failed: " + err.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function sendMessage() {
@@ -268,6 +261,7 @@ window._approvePerm = async function (requestId, btn) {
   try {
     await apiSendControl(currentSessionId, { type: "permission_response", approved: true, request_id: requestId });
     removePermissionPrompt(btn);
+    showLoading();
   } catch (err) { alert("Failed to approve: " + err.message); btn.disabled = false; }
 };
 
@@ -307,8 +301,6 @@ function setupNewSessionDialog() {
       opt.textContent = `${e.machine_name || e.id} (${e.branch || "no branch"})`;
       envSelect.appendChild(opt);
     }
-    const bridgeEnvId = getBridgeEnvId();
-    if (bridgeEnvId) envSelect.value = bridgeEnvId;
     errorEl.classList.add("hidden");
     titleInput.value = "";
     dialog.classList.remove("hidden");
@@ -325,7 +317,7 @@ function setupNewSessionDialog() {
       if (envSelect.value) body.environment_id = envSelect.value;
       const session = await apiCreateSession(body);
       dialog.classList.add("hidden");
-      navigate(`#session/${session.id}`);
+      navigate(`/code/${session.id}`);
     } catch (err) {
       errorEl.textContent = err.message || "Failed to create session";
       errorEl.classList.remove("hidden");
@@ -336,12 +328,106 @@ function setupNewSessionDialog() {
 }
 
 // ============================================================
+// Identity Panel (QR code display + scan)
+// ============================================================
+
+function setupIdentityPanel() {
+  const btn = document.getElementById("nav-identity");
+  const panel = document.getElementById("identity-panel");
+  const closeBtn = panel.querySelector(".panel-close");
+  const uuidDisplay = document.getElementById("uuid-display");
+  const qrContainer = document.getElementById("qr-display");
+
+  // Show panel and generate QR code
+  btn.addEventListener("click", () => {
+    const uuid = getUuid();
+    uuidDisplay.textContent = uuid;
+    const qrUrl = `${window.location.origin}/code?uuid=${encodeURIComponent(uuid)}`;
+    qrContainer.innerHTML = "";
+    if (typeof QRCode !== "undefined") {
+      new QRCode(qrContainer, { text: qrUrl, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+      // qrcodejs generates both canvas and img, hide the duplicate img
+      const img = qrContainer.querySelector("img");
+      if (img) img.remove()
+    }
+    panel.classList.remove("hidden");
+  });
+
+  closeBtn.addEventListener("click", () => panel.classList.add("hidden"));
+
+  // Click outside to close
+  panel.addEventListener("click", (e) => {
+    if (e.target === panel) panel.classList.add("hidden");
+  });
+
+  // Copy UUID to clipboard
+  document.getElementById("uuid-copy-btn").addEventListener("click", () => {
+    const uuid = getUuid();
+    navigator.clipboard.writeText(uuid).then(() => {
+      const btn = document.getElementById("uuid-copy-btn");
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = "Copy"; }, 2000);
+    });
+  });
+
+  // Scan QR from uploaded image
+  document.getElementById("qr-scan-btn").addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        if (typeof jsQR !== "undefined") {
+          const code = jsQR(imageData.data, imageData.width, imageData.height);
+          if (code && code.data) {
+            try {
+              const url = new URL(code.data);
+              const importedUuid = url.searchParams.get("uuid");
+              if (importedUuid) {
+                setUuid(importedUuid);
+                panel.classList.add("hidden");
+                navigate("/code");
+                renderDashboard();
+                return;
+              }
+            } catch {
+              // Not a valid URL — try using raw data as UUID
+              if (code.data.length >= 32) {
+                setUuid(code.data);
+                panel.classList.add("hidden");
+                navigate("/code");
+                renderDashboard();
+                return;
+              }
+            }
+            alert("No valid UUID found in QR code");
+          } else {
+            alert("No QR code found in image");
+          }
+        }
+      };
+      img.src = URL.createObjectURL(file);
+    };
+    input.click();
+  });
+}
+
+// ============================================================
 // Init
 // ============================================================
 
 document.addEventListener("DOMContentLoaded", () => {
-  setupLogin();
   setupControlBar();
   setupNewSessionDialog();
+  setupIdentityPanel();
   handleRoute();
 });

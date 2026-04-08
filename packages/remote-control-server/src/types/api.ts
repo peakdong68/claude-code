@@ -4,6 +4,7 @@
 declare module "hono" {
   interface ContextVariableMap {
     username?: string;
+    uuid?: string;
     jwtPayload?: { session_id: string; role: string; iat: number; exp: number };
   }
 }
